@@ -1,23 +1,41 @@
+"""
+Noise Covariance Matrix Computation.
+
+This script computes the empirical noise covariance matrix for each subject.
+It uses the pre-stimulus baseline period (-300ms to 0ms) from both the
+'Faces' and 'Motion' task paradigms to accurately estimate sensor noise
+characteristics.
+
+The computed covariance matrices are crucial for regularizing the inverse
+solutions (MNE, dSPM, sLORETA, eLORETA).
+"""
+
 import os
 import mne
 
+# Define directory paths for dataset and output
 dataset_dir = r"ds003505\derivatives\eeglab-v14.1.1"
 derivatives_dir = r"ds003505\derivatives"
 out_dir = os.path.join(derivatives_dir, 'covariances')
 os.makedirs(out_dir, exist_ok=True)
 
+# List of subject IDs to process
 sub_ids = [
-    'sub-01', 'sub-02', 'sub-03', 'sub-04', 'sub-06', 'sub-07', 'sub-08', 
-    'sub-09', 'sub-10', 'sub-11', 'sub-12', 'sub-13', 'sub-14', 'sub-15', 
+    'sub-01', 'sub-02', 'sub-03', 'sub-04', 'sub-06', 'sub-07', 'sub-08',
+    'sub-09', 'sub-10', 'sub-11', 'sub-12', 'sub-13', 'sub-14', 'sub-15',
     'sub-16', 'sub-17', 'sub-18', 'sub-19', 'sub-20'
 ]
 
+# Baseline definition (in seconds)
 baseline = (-0.3, 0)
 cov_tmin, cov_tmax = -0.3, 0
 
+# Compute noise covariance for each subject
 for sub_id in sub_ids:
+    print(f"Processing noise covariance for {sub_id}...")
     epochs_list = []
 
+    # Process Faces task data
     face_path = os.path.join(dataset_dir, sub_id, 'eeg', f'{sub_id}_task-faces_desc-preproc_eeg.set')
     if os.path.exists(face_path):
         ep_faces = mne.read_epochs_eeglab(face_path, verbose=False)
@@ -26,6 +44,7 @@ for sub_id in sub_ids:
         ep_faces.apply_baseline(baseline, verbose=False)
         epochs_list.append(ep_faces)
 
+    # Process Motion task data
     motion_path = os.path.join(dataset_dir, sub_id, 'eeg', f'{sub_id}_task-motion_desc-preproc_eeg.set')
     if os.path.exists(motion_path):
         ep_motion = mne.read_epochs_eeglab(motion_path, verbose=False)
@@ -34,12 +53,19 @@ for sub_id in sub_ids:
         ep_motion.apply_baseline(baseline, verbose=False)
         epochs_list.append(ep_motion)
 
-    all_epochs = mne.concatenate_epochs(epochs_list, verbose=False)
-    
-    noise_cov = mne.compute_covariance(
-        all_epochs, tmin=cov_tmin, tmax=cov_tmax, 
-        method='shrunk', n_jobs=-1, verbose=False
-    )
-    
-    cov_fname = os.path.join(out_dir, f"{sub_id}-cov.fif")
-    mne.write_cov(cov_fname, noise_cov, overwrite=True, verbose=False)
+    # Concatenate all available epochs for a more robust covariance estimate
+    if epochs_list:
+        all_epochs = mne.concatenate_epochs(epochs_list, verbose=False)
+
+        # Compute the covariance using a 'shrunk' estimator
+        noise_cov = mne.compute_covariance(
+            all_epochs, tmin=cov_tmin, tmax=cov_tmax,
+            method='shrunk', n_jobs=-1, verbose=False
+        )
+
+        # Save the computed noise covariance to disk
+        cov_fname = os.path.join(out_dir, f"{sub_id}-cov.fif")
+        mne.write_cov(cov_fname, noise_cov, overwrite=True, verbose=False)
+        print(f"Saved: {cov_fname}")
+    else:
+        print(f"Warning: No valid datasets found for {sub_id}.")
